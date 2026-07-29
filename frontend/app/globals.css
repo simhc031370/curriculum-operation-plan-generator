@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-50: #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-600: #2563eb;
+  --brand-800: #1e40af;
+  --surface: #f4f8fd;
+  --ink: #0f2744;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, #bfdbfe 0%, transparent 50%),
+    linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%);
+  min-height: 100vh;
+}
+
+@layer components {
+  .section-panel {
+    @apply rounded-2xl border border-brand-100 bg-white/90 backdrop-blur-sm shadow-soft;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-sm font-semibold text-brand-900;
+  }
+
+  .field-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200;
+  }
+
+  .result-scroll {
+    scrollbar-gutter: stable;
+  }
+
+  .result-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .result-scroll::-webkit-scrollbar-thumb {
+    background: #bfdbfe;
+    border-radius: 999px;
+  }
+
+  .prose-lesson {
+    @apply w-full max-w-full text-[0.95rem] leading-6 text-slate-800;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
+  }
+
+  .prose-lesson h1 {
+    @apply mb-3 mt-1 text-xl font-bold tracking-tight text-brand-900;
+  }
+
+  .prose-lesson h2 {
+    @apply mb-2 mt-5 border-b border-brand-100 pb-1.5 text-lg font-bold text-brand-800;
+  }
+
+  .prose-lesson h3 {
+    @apply mb-1.5 mt-4 text-base font-semibold text-brand-700;
+  }
+
+  .prose-lesson h4 {
+    @apply mb-1 mt-3 text-sm font-semibold text-brand-700;
+  }
+
+  .prose-lesson p {
+    @apply my-2;
+  }
+
+  .prose-lesson ul {
+    @apply my-2 list-disc space-y-0.5 pl-5;
+  }
+
+  .prose-lesson ol {
+    @apply my-2 list-decimal space-y-0.5 pl-5;
+  }
+
+  .prose-lesson .table-wrap {
+    @apply my-3 max-w-full overflow-x-auto rounded-lg border border-slate-200;
+  }
+
+  .prose-lesson table {
+    @apply m-0 w-full min-w-[520px] border-collapse text-[0.82rem] leading-5;
+  }
+
+  .prose-lesson thead {
+    @apply bg-brand-50;
+  }
+
+  .prose-lesson th {
+    @apply border border-slate-200 px-2.5 py-1.5 text-left font-semibold text-brand-900;
+    white-space: nowrap;
+  }
+
+  .prose-lesson td {
+    @apply border border-slate-200 px-2.5 py-1.5 align-top text-slate-700;
+  }
+
+  .prose-lesson tr:nth-child(even) {
+    @apply bg-slate-50/80;
+  }
+
+  .prose-lesson code {
+    @apply rounded bg-slate-100 px-1 py-0.5 text-[0.85em];
+  }
+
+  .prose-lesson blockquote {
+    @apply my-3 border-l-4 border-brand-300 bg-brand-50/60 py-1.5 pl-3 text-slate-700;
+  }
+
+  .prose-lesson hr {
+    @apply my-4 border-slate-200;
+  }
+}

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/.venv/
+backend/venv/
+.venv/
+venv/
+
+# Build / cache
+frontend/.next/
+frontend/out/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Deploy
+.vercel
+frontend/.vercel
+
+# Misc
+*.log
+.tmp/
+temp/
+uploads/
