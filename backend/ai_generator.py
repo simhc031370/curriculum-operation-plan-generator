@@ -1,29 +1,33 @@
 """멀티 LLM 라우터.
 
-업로드된 운영계획서 서식(골격)을 그대로 두고
-입력 조건·공식 성취기준으로 내용만 채워
-1학기 분량 교수학습평가 운영계획서를 생성한다.
+업로드 서식에서 만든 '잠긴 골격'의 [작성] 칸만 채운다.
+형식 검증 후 부족하면 1회 교정 재생성한다.
 """
 
 from __future__ import annotations
 
 import re
 
+from template_skeleton import (
+    TemplateSkeleton,
+    build_locked_checklist,
+    build_template_skeleton,
+    fidelity_report,
+)
+
 SYSTEM_PROMPT = (
-    "당신은 대한민국 초·중·고등학교 운영계획서 작성 전문가입니다. "
-    "핵심 임무는 '새 문서를 창작'하는 것이 아니라 "
-    "'사용자가 업로드한 서식 파일을 그대로 두고 빈칸·내용만 채우는 것'입니다. "
-    "업로드 서식의 목차, 제목 문구, 항목 순서, 표의 열/행 구성, 번호 체계, 문체를 "
-    "한 글자도 바꾸지 말고 복제한 뒤, 셀과 본문 내용만 새 입력 조건으로 교체하세요. "
-    "서식에 없는 새로운 대목차·새 표 양식을 만들지 마세요. "
-    "국가성취기준은 프롬프트에 제공된 공식 목록만 사용하세요. "
+    "당신은 학교 운영계획서 '서식 채우기' 전담 작성자입니다. "
+    "절대 새 양식을 창작하지 마세요. "
+    "주어진 서식 골격의 제목·표 헤더·행 라벨·순서를 한 글자도 바꾸지 말고, "
+    "[작성] 칸과 [작성: ...] 문단만 새 입력 조건으로 채우세요. "
+    "골격에 없는 새 대목차·새 표 양식을 추가하지 마세요. "
+    "국가성취기준은 제공된 공식 목록만 사용하세요. "
     "HTML 금지. GitHub Flavored Markdown만 출력하세요. "
-    "빈칸·미정·추후작성·예시 문구를 남기지 마세요."
+    "설명·서론·작업과정은 출력하지 말고 완성본 본문만 출력하세요."
 )
 
 
 def sanitize_markdown(text: str) -> str:
-    """LLM 응답의 HTML·잡음을 제거해 프론트 렌더링 품질을 높인다."""
     cleaned = text or ""
     cleaned = re.sub(r"^```(?:html|markdown|md)?\s*", "", cleaned, flags=re.I)
     cleaned = re.sub(r"\s*```$", "", cleaned)
@@ -45,9 +49,19 @@ def sanitize_markdown(text: str) -> str:
         .replace("&#39;", "'")
     )
     cleaned = re.sub(r"</?[a-zA-Z][^>]*>", "", cleaned)
-    cleaned = re.sub(r"\[(?:작성|기입|입력|TODO|TBD)[^\]]*\]", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\[(?:TODO|TBD)[^\]]*\]", "", cleaned, flags=re.I)
+    # 남은 [작성] 표기는 제거하지 않음 — 검증용. 최종에서만 정리
     cleaned = re.sub(r"\n{4,}", "\n\n\n", cleaned)
     return cleaned.strip()
+
+
+def _strip_unfilled_markers(text: str) -> str:
+    text = re.sub(
+        r"\[작성(?::[^\]]*)?\]",
+        "",
+        text,
+    )
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _count_items(raw: str) -> int:
@@ -59,7 +73,9 @@ def _count_items(raw: str) -> int:
     return max(len(parts), 1) if raw.strip() else 0
 
 
-def _build_user_prompt(
+def _build_fill_prompt(
+    *,
+    skeleton: TemplateSkeleton,
     school_level: str,
     grade: str,
     subject: str,
@@ -71,68 +87,95 @@ def _build_user_prompt(
     written_exam_ratio: int,
     performance_exam_count: int,
     performance_exam_ratio: int,
-    document_text: str,
     official_standards_block: str,
+    original_excerpt: str,
 ) -> str:
-    max_chars = 80000
-    clipped = document_text[:max_chars]
-    truncation_note = (
-        "\n\n[참고: 업로드 문서가 길어 일부만 전달되었습니다. "
-        "전달된 범위의 서식은 끝까지 채우세요.]"
-        if len(document_text) > max_chars
-        else ""
-    )
     perf_count = _count_items(performance_items)
+    checklist = build_locked_checklist(skeleton)
+    excerpt = original_excerpt[:12000]
 
-    return f"""# 임무
-업로드된 「운영계획서 서식」을 골격으로 삼아, 아래 입력 조건으로 **내용만 채운 완성본**을 출력하라.
-새 양식을 창작하지 말고, 서식을 **베껴 쓴 뒤 칸을 채우는** 방식으로 작업하라.
+    return f"""# 작업
+아래 「서식 골격」을 그대로 복사한 뒤, `[작성]` / `[작성: ...]` 자리만 채워 완성본을 출력하라.
 
-# 업로드 서식 (형식·목차·표의 유일한 기준 — 이 구조를 1:1로 복제해 채울 것)
-{clipped}{truncation_note}
+# 규칙 (위반 금지)
+1. 골격의 제목 문구·순서·표 헤더·열 수·행 라벨을 변경·삭제·재배치하지 말 것
+2. 골격에 없는 새 섹션/새 표 양식을 만들지 말 것
+3. `[작성]` 칸은 실제 내용으로 대체 (남기지 말 것)
+4. 수행평가 항목이 늘어난 경우에만, 기존 수행평가 표 양식의 행을 항목 수에 맞게 추가
+5. 성취기준은 공식 목록의 코드+진술만 사용
+6. 완성본 본문만 출력 (분석/설명 금지)
 
-# 채워야 할 입력 조건
+# 서식 골격 (이것을 1:1로 채워 출력)
+{skeleton.skeleton_markdown}
+
+{checklist}
+
+# 입력 조건 (내용 채움용)
 - 학교급: {school_level}
 - 학년: {grade}
 - 과목: {subject}
 - 시수(학기 단위): {total_hours}시간
-- 국가성취기준 교육과정: {curriculum}
-- 해당 학기 수업 대단원명:
+- 교육과정: {curriculum}
+- 대단원명:
 {unit_names}
 - 수행평가 항목 ({perf_count}개):
 {performance_items}
-- 지필평가 횟수: {written_exam_count}회 / 반영 비율: {written_exam_ratio}%
-- 수행평가 실시 횟수: {performance_exam_count}회 / 반영 비율: {performance_exam_ratio}%
+- 지필평가: {written_exam_count}회 / {written_exam_ratio}%
+- 수행평가: {performance_exam_count}회 / {performance_exam_ratio}%
+- 지필+수행 반영비율 합계 100%, 수행 항목별 비율 합 = {performance_exam_ratio}%
 
 {official_standards_block}
 
-# 작성 절차 (반드시 이 순서)
-1. 업로드 서식에서 대제목·중제목·소제목·표 헤더·열 구성을 있는 그대로 파악한다.
-2. 출력도 같은 순서·같은 제목 문구·같은 표 열로 시작한다.
-3. 각 칸/문단의 기존 예시 내용(다른 과목·작년 내용 등)을 지우고, 위 입력 조건으로 다시 쓴다.
-4. 원본에 있는 모든 표·모든 항목을 빠짐없이 채운다. 원본에 없는 새 대목차·새 표 양식은 만들지 않는다.
-5. 수행평가 항목 수가 원본보다 많으면, **원본의 수행평가/평가계획 영역 안에서만**
-   행을 늘리거나 동일 양식의 세부표를 항목 수만큼 복제한다. 다른 양식을 새로 발명하지 않는다.
-6. 성취기준은 위 「공식 국가성취기준」 표의 코드+진술만 그대로 사용한다. 창작 금지.
+# 원문 참고 발췌 (표현·문체만 참고, 구조는 위 골격 우선)
+{excerpt}
+"""
 
-# 절대 금지
-- 업로드 서식과 다른 목차로 처음부터 다시 쓰기
-- 서식에 없는 섹션을 임의 추가 (예: 원본에 없는 '총론/개요'를 길게 창작)
-- 표 열 이름을 바꾸거나 열을 마음대로 추가/삭제
-- HTML 태그 사용
-- 빈칸, '작성 예정', '예시', '추후 기입'
-- 공식 목록에 없는 성취기준 코드 생성
 
-# 수치 일치 (필수)
-- 시수 합계 = {total_hours}
-- 지필평가 {written_exam_count}회, 반영 {written_exam_ratio}%
-- 수행평가 {performance_exam_count}회, 반영 {performance_exam_ratio}%
-- 지필+수행 반영 비율 합계 100%
-- 수행평가 항목별 반영 비율 합 = {performance_exam_ratio}%
+def _build_repair_prompt(
+    *,
+    draft: str,
+    missing: list[str],
+    skeleton: TemplateSkeleton,
+    school_level: str,
+    grade: str,
+    subject: str,
+    total_hours: int,
+    unit_names: str,
+    performance_items: str,
+    written_exam_count: int,
+    written_exam_ratio: int,
+    performance_exam_count: int,
+    performance_exam_ratio: int,
+    official_standards_block: str,
+) -> str:
+    missing_block = "\n".join(f"- {m}" for m in missing[:40]) or "- (세부 누락 다수)"
+    checklist = build_locked_checklist(skeleton)
+    return f"""# 교정 작업
+아래 초안은 업로드 서식과 맞지 않는다. 서식 골격에 맞게 **전면 재작성**하라.
+
+# 누락·불일치
+{missing_block}
+
+# 서식 골격 (이 구조를 다시 따라 채울 것)
+{skeleton.skeleton_markdown}
+
+{checklist}
+
+# 입력 조건
+- {school_level} {grade} {subject}, 시수 {total_hours}시간
+- 대단원:
+{unit_names}
+- 수행평가 항목:
+{performance_items}
+- 지필 {written_exam_count}회 {written_exam_ratio}% / 수행 {performance_exam_count}회 {performance_exam_ratio}%
+
+{official_standards_block}
+
+# 잘못된 초안 (참고만, 구조를 따르지 말 것)
+{draft[:12000]}
 
 # 출력
-- 완성된 운영계획서 본문만 Markdown으로 출력
-- 서식 분석 과정, 설명, 서론, 후기는 출력하지 말 것
+골격과 동일한 제목·표 헤더 순서로 된 완성본만 Markdown 출력.
 """
 
 
@@ -154,15 +197,17 @@ def generate_operation_plan(
     document_text: str,
     official_standards_block: str,
 ) -> str:
-    """업로드 서식 골격 유지 + 공식 성취기준 반영 운영계획서를 반환한다."""
     if not (document_text or "").strip():
         raise ValueError(
             "업로드 서식에서 텍스트를 읽지 못했습니다. "
             "HWPX로 저장해 다시 업로드해 주세요."
         )
 
+    skeleton = build_template_skeleton(document_text)
     provider_normalized = provider.strip().lower()
-    user_prompt = _build_user_prompt(
+
+    fill_prompt = _build_fill_prompt(
+        skeleton=skeleton,
         school_level=school_level,
         grade=grade,
         subject=subject,
@@ -174,26 +219,56 @@ def generate_operation_plan(
         written_exam_ratio=written_exam_ratio,
         performance_exam_count=performance_exam_count,
         performance_exam_ratio=performance_exam_ratio,
-        document_text=document_text,
         official_standards_block=official_standards_block,
+        original_excerpt=document_text,
     )
 
-    if provider_normalized == "openai":
-        raw = _generate_with_openai(model, api_key, user_prompt)
-    elif provider_normalized == "anthropic":
-        raw = _generate_with_anthropic(model, api_key, user_prompt)
-    elif provider_normalized in {"gemini", "google"}:
-        raw = _generate_with_gemini(model, api_key, user_prompt)
-    else:
-        raise ValueError(
-            f"지원하지 않는 AI 공급사입니다: {provider}. "
-            "openai / anthropic / gemini 중 하나를 선택하세요."
-        )
+    raw = _call_llm(provider_normalized, model, api_key, fill_prompt)
+    draft = sanitize_markdown(raw)
+    score, missing = fidelity_report(skeleton, draft)
 
-    return sanitize_markdown(raw)
+    # 서식 충실도가 낮으면 1회 교정
+    if score < 0.72 and (skeleton.locked_headings or skeleton.locked_table_headers):
+        repair_prompt = _build_repair_prompt(
+            draft=draft,
+            missing=missing,
+            skeleton=skeleton,
+            school_level=school_level,
+            grade=grade,
+            subject=subject,
+            total_hours=total_hours,
+            unit_names=unit_names,
+            performance_items=performance_items,
+            written_exam_count=written_exam_count,
+            written_exam_ratio=written_exam_ratio,
+            performance_exam_count=performance_exam_count,
+            performance_exam_ratio=performance_exam_ratio,
+            official_standards_block=official_standards_block,
+        )
+        repaired_raw = _call_llm(provider_normalized, model, api_key, repair_prompt)
+        repaired = sanitize_markdown(repaired_raw)
+        score2, missing2 = fidelity_report(skeleton, repaired)
+        if score2 >= score:
+            draft = repaired
+            missing = missing2
+
+    return _strip_unfilled_markers(draft)
 
 
 generate_lesson_plan = generate_operation_plan
+
+
+def _call_llm(provider: str, model: str, api_key: str, user_prompt: str) -> str:
+    if provider == "openai":
+        return _generate_with_openai(model, api_key, user_prompt)
+    if provider == "anthropic":
+        return _generate_with_anthropic(model, api_key, user_prompt)
+    if provider in {"gemini", "google"}:
+        return _generate_with_gemini(model, api_key, user_prompt)
+    raise ValueError(
+        f"지원하지 않는 AI 공급사입니다: {provider}. "
+        "openai / anthropic / gemini 중 하나를 선택하세요."
+    )
 
 
 def _generate_with_openai(model: str, api_key: str, user_prompt: str) -> str:
@@ -218,7 +293,7 @@ def _generate_with_openai(model: str, api_key: str, user_prompt: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.15,
+        temperature=0.1,
     )
     content = response.choices[0].message.content
     if not content:
@@ -248,7 +323,7 @@ def _generate_with_anthropic(model: str, api_key: str, user_prompt: str) -> str:
         "messages": [{"role": "user", "content": user_prompt}],
     }
     if not is_claude_5_plus:
-        create_kwargs["temperature"] = 0.15
+        create_kwargs["temperature"] = 0.1
 
     message = client.messages.create(**create_kwargs)
 

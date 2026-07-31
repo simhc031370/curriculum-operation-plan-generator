@@ -17,6 +17,7 @@ interface ResultPanelProps {
   schoolLevel?: string;
   grade?: string;
   subject?: string;
+  templateFidelity?: number | null;
 }
 
 function LoadingState() {
@@ -44,10 +45,15 @@ export default function ResultPanel({
   schoolLevel,
   grade,
   subject,
+  templateFidelity = null,
 }: ResultPanelProps) {
   const cleaned = sanitizeMarkdown(markdown);
   const [downloading, setDownloading] = useState(false);
   const baseName = buildDownloadBaseName({ schoolLevel, grade, subject });
+  const fidelityLabel =
+    typeof templateFidelity === "number"
+      ? `서식 일치도 ${Math.round(templateFidelity * 100)}%`
+      : null;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(cleaned);
@@ -90,7 +96,14 @@ export default function ResultPanel({
   return (
     <section className="section-panel overflow-hidden p-5 md:p-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-brand-900">생성 결과</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-bold text-brand-900">생성 결과</h2>
+          {cleaned && !loading && fidelityLabel && (
+            <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {fidelityLabel}
+            </span>
+          )}
+        </div>
         {cleaned && !loading && (
           <div className="flex flex-wrap gap-2">
             <button

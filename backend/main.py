@@ -263,6 +263,11 @@ async def generate(
             official_standards_block=official_standards_block,
         )
 
+        from template_skeleton import build_template_skeleton, fidelity_report
+
+        skeleton = build_template_skeleton(document_text)
+        score, _missing = fidelity_report(skeleton, markdown)
+
         return JSONResponse(
             content={
                 "success": True,
@@ -281,6 +286,9 @@ async def generate(
                 "provider": provider.strip().lower(),
                 "model": model.strip(),
                 "markdown": markdown,
+                "template_fidelity": round(score, 3),
+                "locked_heading_count": len(skeleton.locked_headings),
+                "locked_table_count": len(skeleton.locked_table_headers),
             }
         )
     except HTTPException:

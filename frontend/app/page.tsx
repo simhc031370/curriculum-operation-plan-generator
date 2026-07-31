@@ -35,6 +35,7 @@ export default function HomePage() {
   const [performanceExamRatio, setPerformanceExamRatio] = useState(60);
   const [loading, setLoading] = useState(false);
   const [markdown, setMarkdown] = useState("");
+  const [fidelity, setFidelity] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const grades = useMemo(() => GRADES_BY_LEVEL[schoolLevel], [schoolLevel]);
@@ -134,6 +135,7 @@ export default function HomePage() {
 
     setLoading(true);
     setMarkdown("");
+    setFidelity(null);
 
     try {
       const response = await fetch(GENERATE_API, {
@@ -157,6 +159,9 @@ export default function HomePage() {
       }
 
       setMarkdown(data.markdown);
+      if (typeof data.template_fidelity === "number") {
+        setFidelity(data.template_fidelity);
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -464,6 +469,7 @@ export default function HomePage() {
           schoolLevel={schoolLevel}
           grade={grade}
           subject={subject}
+          templateFidelity={fidelity}
         />
       </div>
 
