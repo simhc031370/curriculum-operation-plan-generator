@@ -27,7 +27,13 @@ from curriculum_lookup import (
 )
 from document_parser import extract_text_from_file
 from hwpx_exporter import markdown_to_hwpx_bytes
-from hwpx_inplace import apply_fills, extract_slots, slots_for_prompt, slots_summary
+from hwpx_inplace import (
+    apply_fills,
+    build_baseline_fills,
+    extract_slots,
+    slots_for_prompt,
+    slots_summary,
+)
 
 app = FastAPI(
     title="교수학습평가 운영계획서 자동 생성 API",
@@ -254,28 +260,71 @@ async def generate(
         if suffix == ".hwpx":
             slots = extract_slots(tmp_path)
             slot_stats = slots_summary(slots)
-            fills = generate_hwpx_fill_plan(
-                provider=provider,
-                model=model,
-                api_key=api_key.strip(),
+            locked_ids = {s.id for s in slots if s.locked}
+
+            # 1) 규칙 기반 기본 채움 (빈 칸에 반드시 값이 들어가게)
+            baseline = build_baseline_fills(
+                slots,
                 school_level=school_level.strip(),
                 grade=grade.strip(),
                 subject=subject.strip(),
                 total_hours=total_hours,
-                curriculum=curriculum.strip(),
                 unit_names=unit_names.strip(),
                 performance_items=performance_items.strip(),
                 written_exam_count=written_exam_count,
                 written_exam_ratio=written_exam_ratio,
                 performance_exam_count=performance_exam_count,
                 performance_exam_ratio=performance_exam_ratio,
-                official_standards_block=official_standards_block,
-                slots_json=slots_for_prompt(slots),
             )
-            # 잠긴 슬롯은 적용하지 않음
-            locked_ids = {s.id for s in slots if s.locked}
-            safe_fills = {k: v for k, v in fills.items() if k not in locked_ids}
-            filled_bytes = apply_fills(tmp_path, safe_fills)
+
+            # 2) LLM 상세 채움 (실패해도 baseline은 유지)
+            llm_fills: dict[str, str] = {}
+            try:
+                llm_fills = generate_hwpx_fill_plan(
+                    provider=provider,
+                    model=model,
+                    api_key=api_key.strip(),
+                    school_level=school_level.strip(),
+                    grade=grade.strip(),
+                    subject=subject.strip(),
+                    total_hours=total_hours,
+                    curriculum=curriculum.strip(),
+                    unit_names=unit_names.strip(),
+                    performance_items=performance_items.strip(),
+                    written_exam_count=written_exam_count,
+                    written_exam_ratio=written_exam_ratio,
+                    performance_exam_count=performance_exam_count,
+                    performance_exam_ratio=performance_exam_ratio,
+                    official_standards_block=official_standards_block,
+                    slots_json=slots_for_prompt(slots),
+                )
+            except Exception:
+                traceback.print_exc()
+                llm_fills = {}
+
+            merged = dict(baseline)
+            for key, value in llm_fills.items():
+                if key in locked_ids:
+                    continue
+                if value and str(value).strip():
+                    merged[key] = str(value).strip()
+
+            safe_fills = {k: v for k, v in merged.items() if k not in locked_ids}
+            filled_bytes, applied_count = apply_fills(tmp_path, safe_fills)
+            if applied_count <= 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "서식의 빈 칸에 내용을 쓰지 못했습니다. "
+                        "다른 HWPX 서식으로 다시 시도해 주세요."
+                    ),
+                )
+            slot_stats = {
+                **slot_stats,
+                "baseline_fills": len(baseline),
+                "llm_fills": len(llm_fills),
+                "applied_fills": applied_count,
+            }
             hwpx_base64 = base64.b64encode(filled_bytes).decode("ascii")
             fill_mode = "hwpx_inplace"
 
