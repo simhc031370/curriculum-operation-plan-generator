@@ -1,7 +1,7 @@
 """멀티 LLM 라우터.
 
-업로드된 운영계획서의 형식을 유지한 채,
-대단원 국가성취기준과 수행평가 항목을 반영하여
+업로드된 운영계획서 서식(골격)을 그대로 두고
+입력 조건·공식 성취기준으로 내용만 채워
 1학기 분량 교수학습평가 운영계획서를 생성한다.
 """
 
@@ -10,20 +10,15 @@ from __future__ import annotations
 import re
 
 SYSTEM_PROMPT = (
-    "당신은 대한민국 초·중·고등학교의 교육과정·국가성취기준·수행평가 설계에 "
-    "정통한 교육과정 전문가입니다. "
-    "업로드된 운영계획서의 문서 형식(목차, 항목 순서, 표 구조, 제목 체계, 문체)을 "
-    "절대 벗어나지 말고 그대로 따라 작성합니다. "
-    "국가성취기준은 절대 임의로 생성하지 않습니다. "
-    "반드시 프롬프트에 제공된 공식 성취기준 목록"
-    "(KICE 학생평가지원포털 STAS https://stas.moe.go.kr/cmn/main , "
-    "에듀넷·티클리어 https://www.edunet.net/main 기준)만 사용합니다. "
-    "목록에 없는 성취기준 코드·진술을 창작·변형·혼합하지 마세요. "
-    "입력된 수행평가 항목마다 세부 평가 계획을 빠짐없이·구체적으로 작성합니다. "
-    "수행평가 항목이 2개 이상이면 총괄 표와 항목별 세부 표를 모두 작성합니다. "
-    "출력은 간결하고 정돈되게 작성하세요. "
-    "HTML 태그는 절대 사용하지 말고 순수 마크다운만 출력하세요. "
-    "빈칸·미완성 표현을 남기지 마세요."
+    "당신은 대한민국 초·중·고등학교 운영계획서 작성 전문가입니다. "
+    "핵심 임무는 '새 문서를 창작'하는 것이 아니라 "
+    "'사용자가 업로드한 서식 파일을 그대로 두고 빈칸·내용만 채우는 것'입니다. "
+    "업로드 서식의 목차, 제목 문구, 항목 순서, 표의 열/행 구성, 번호 체계, 문체를 "
+    "한 글자도 바꾸지 말고 복제한 뒤, 셀과 본문 내용만 새 입력 조건으로 교체하세요. "
+    "서식에 없는 새로운 대목차·새 표 양식을 만들지 마세요. "
+    "국가성취기준은 프롬프트에 제공된 공식 목록만 사용하세요. "
+    "HTML 금지. GitHub Flavored Markdown만 출력하세요. "
+    "빈칸·미정·추후작성·예시 문구를 남기지 마세요."
 )
 
 
@@ -59,7 +54,6 @@ def _count_items(raw: str) -> int:
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if len(lines) >= 2:
         return len(lines)
-    # 한 줄에 쉼표/슬래시로 나열한 경우
     parts = re.split(r"[,/·|]", raw)
     parts = [p.strip() for p in parts if p.strip()]
     return max(len(parts), 1) if raw.strip() else 0
@@ -80,52 +74,24 @@ def _build_user_prompt(
     document_text: str,
     official_standards_block: str,
 ) -> str:
-    max_chars = 60000
+    max_chars = 80000
     clipped = document_text[:max_chars]
     truncation_note = (
-        "\n\n[참고: 업로드 문서가 길어 일부만 전달되었습니다.]"
+        "\n\n[참고: 업로드 문서가 길어 일부만 전달되었습니다. "
+        "전달된 범위의 서식은 끝까지 채우세요.]"
         if len(document_text) > max_chars
         else ""
     )
     perf_count = _count_items(performance_items)
-    multi_perf_rule = (
-        f"""
-## 수행평가 작성 규칙 (항목/영역 {perf_count}개 — 표 추가 필수)
-사용자가 수행평가를 {perf_count}개 입력했으므로 반드시 아래를 모두 작성할 것:
-1. 원본 한글 서식의 수행평가 영역에 맞춰 '수행평가 총괄표'를 Markdown 표로 작성
-   (열은 원본 양식을 따르되, 최소 포함: 번호, 평가 항목명, 관련 대단원, 관련 성취기준,
-   평가 시기, 반영 비율, 평가 방법)
-2. 이어서 각 수행평가 항목(영역)마다 별도의 '세부 평가 계획' 표/소절을 추가할 것
-   - 항목이 2개면 세부계획 표도 2개, 3개면 3개 (개수 일치 필수)
-3. 항목별 세부 계획에 빈칸 없이 포함할 내용:
-   - 평가 목표
-   - 관련 국가성취기준(아래 공식 목록의 코드+진술 그대로)
-   - 평가 과제/활동 설명(구체적 절차 포함)
-   - 평가 방법·도구
-   - 채점 기준표(상/중/하 또는 배점 Rubric — 반드시 표)
-   - 배점 및 반영 비율
-   - 평가 시기
-   - 유의사항·피드백 계획
-4. 수행평가 전체 반영 비율은 {performance_exam_ratio}%이며,
-   실시 횟수는 {performance_exam_count}회에 맞게 시기·배점을 구성할 것
-5. 항목별 반영 비율 합이 {performance_exam_ratio}%가 되도록 나눌 것
-6. '작성 예정', '예시', 빈 칸을 남기지 말 것
-"""
-        if perf_count >= 2
-        else f"""
-## 수행평가 작성 규칙 (항목 {perf_count}개)
-1. 입력된 수행평가 항목에 맞춰 세부 평가 계획을 원본 한글 서식에 맞게 완벽하게 작성할 것
-2. 수행평가 실시 횟수 {performance_exam_count}회, 반영 비율 {performance_exam_ratio}%를 그대로 반영할 것
-3. 세부 계획에 빈칸 없이 포함할 내용:
-   - 평가 목표, 관련 국가성취기준(아래 공식 목록의 코드+진술 그대로), 평가 과제/활동,
-     평가 방법·도구, 채점 기준(표), 배점·반영 비율, 평가 시기, 유의사항
-4. 추상적 한 줄 설명으로 끝내지 말고 수업에서 바로 쓸 수 있게 구체적으로 채울 것
-"""
-    )
 
-    return f"""업로드된 운영계획서를 분석한 뒤, 아래 조건으로 1학기 교수학습평가 운영계획서를 작성해라.
+    return f"""# 임무
+업로드된 「운영계획서 서식」을 골격으로 삼아, 아래 입력 조건으로 **내용만 채운 완성본**을 출력하라.
+새 양식을 창작하지 말고, 서식을 **베껴 쓴 뒤 칸을 채우는** 방식으로 작업하라.
 
-## 입력 조건
+# 업로드 서식 (형식·목차·표의 유일한 기준 — 이 구조를 1:1로 복제해 채울 것)
+{clipped}{truncation_note}
+
+# 채워야 할 입력 조건
 - 학교급: {school_level}
 - 학년: {grade}
 - 과목: {subject}
@@ -133,50 +99,40 @@ def _build_user_prompt(
 - 국가성취기준 교육과정: {curriculum}
 - 해당 학기 수업 대단원명:
 {unit_names}
-- 수행평가 항목:
+- 수행평가 항목 ({perf_count}개):
 {performance_items}
-- 지필평가 횟수: {written_exam_count}회
-- 지필평가 반영 비율: {written_exam_ratio}%
-- 수행평가 실시 횟수: {performance_exam_count}회
-- 수행평가 반영 비율: {performance_exam_ratio}%
+- 지필평가 횟수: {written_exam_count}회 / 반영 비율: {written_exam_ratio}%
+- 수행평가 실시 횟수: {performance_exam_count}회 / 반영 비율: {performance_exam_ratio}%
 
 {official_standards_block}
 
-## 업로드된 운영계획서 원문 (형식의 유일한 기준)
-{clipped}{truncation_note}
+# 작성 절차 (반드시 이 순서)
+1. 업로드 서식에서 대제목·중제목·소제목·표 헤더·열 구성을 있는 그대로 파악한다.
+2. 출력도 같은 순서·같은 제목 문구·같은 표 열로 시작한다.
+3. 각 칸/문단의 기존 예시 내용(다른 과목·작년 내용 등)을 지우고, 위 입력 조건으로 다시 쓴다.
+4. 원본에 있는 모든 표·모든 항목을 빠짐없이 채운다. 원본에 없는 새 대목차·새 표 양식은 만들지 않는다.
+5. 수행평가 항목 수가 원본보다 많으면, **원본의 수행평가/평가계획 영역 안에서만**
+   행을 늘리거나 동일 양식의 세부표를 항목 수만큼 복제한다. 다른 양식을 새로 발명하지 않는다.
+6. 성취기준은 위 「공식 국가성취기준」 표의 코드+진술만 그대로 사용한다. 창작 금지.
 
-## 최우선 규칙: 한글 원본 서식 절대 준수 + 전 항목 완전 작성
-1. 업로드한 한글(HWP/HWPX/PDF) 파일의 형식을 절대 벗어나지 말 것
-2. 구성 항목, 목차 순서, 표의 열 구성, 소제목, 번호 매기기, 문체를 원본과 동일하게 유지할 것
-3. 원본에 있는 모든 항목·표·칸을 빠짐없이 실제 내용으로 채울 것 (빈칸 금지)
-4. 원본에 없는 양식을 마음대로 만들지 말 것. 단, 수행평가 항목/영역이 2개 이상이면
-   원본의 수행평가/평가계획 영역 안에서 총괄표 + 항목별 세부표를 추가·보강하는 것은 필수
-5. 내용은 새 조건(학교급·학년·과목·시수·대단원·수행평가·공식 성취기준)에 맞게 바꾸되
-   껍데기(형식)는 원본 한글 문서를 복제할 것
+# 절대 금지
+- 업로드 서식과 다른 목차로 처음부터 다시 쓰기
+- 서식에 없는 섹션을 임의 추가 (예: 원본에 없는 '총론/개요'를 길게 창작)
+- 표 열 이름을 바꾸거나 열을 마음대로 추가/삭제
+- HTML 태그 사용
+- 빈칸, '작성 예정', '예시', '추후 기입'
+- 공식 목록에 없는 성취기준 코드 생성
 
-## 국가성취기준 반영 규칙 (최우선 · 위반 금지)
-1. 성취기준을 절대 임의 생성하지 말 것
-2. 위에 제공된 「공식 국가성취기준」 표에 있는 코드와 진술만 사용할 것
-3. 출처는 STAS(https://stas.moe.go.kr/cmn/main)와 에듀넷(https://www.edunet.net/main)이며,
-   모델 학습 기억이나 추측으로 코드를 만들어내지 말 것
-4. 대단원별로 공식 목록에서 관련 성취기준을 골라 매핑하고, 코드+진술을 그대로 명시할 것
-5. 목록에 없는 코드(예: 존재하지 않는 [9정보xx-xx])를 출력하면 안 됨
+# 수치 일치 (필수)
+- 시수 합계 = {total_hours}
+- 지필평가 {written_exam_count}회, 반영 {written_exam_ratio}%
+- 수행평가 {performance_exam_count}회, 반영 {performance_exam_ratio}%
+- 지필+수행 반영 비율 합계 100%
+- 수행평가 항목별 반영 비율 합 = {performance_exam_ratio}%
 
-{multi_perf_rule}
-
-## 완성도·출력 품질 규칙 (매우 중요)
-1. HTML 태그(<br>, <p>, <div>, <span>, <table> 등)를 절대 넣지 말 것. Markdown만 사용
-2. 표는 GitHub Flavored Markdown 표(| --- |)만 사용할 것
-3. 모든 칸·모든 항목을 실제 내용으로 채울 것. 빈칸/미정/추후작성/예시 금지
-4. 시수 합계가 {total_hours}와 일치하는지 문서에 명시할 것
-5. 지필평가 {written_exam_count}회·반영 비율 {written_exam_ratio}%,
-   수행평가 {performance_exam_count}회·반영 비율 {performance_exam_ratio}%를
-   평가계획·성적 반영 비율 표에 그대로 반영할 것 (합계 100%)
-6. 각 대단원마다 학습 내용, 공식 성취기준, 시수, 평가 연계가 빠지지 않게 작성할 것
-7. 불필요한 서론·반복 설명·과도한 확장 없이 운영계획서 본문만 간결하게 출력할 것
-8. 표 칸은 핵심만 쓰고 장문 나열을 피할 것. 같은 내용을 여러 섹션에 복붙하지 말 것
-9. 출력 전에 스스로 검수: 누락 항목, HTML 잔여, 표 깨짐, 시수 불일치,
-   반영 비율 합계(100%), 공식 목록에 없는 성취기준 코드 사용 여부가 있으면 수정 후 제출
+# 출력
+- 완성된 운영계획서 본문만 Markdown으로 출력
+- 서식 분석 과정, 설명, 서론, 후기는 출력하지 말 것
 """
 
 
@@ -198,7 +154,13 @@ def generate_operation_plan(
     document_text: str,
     official_standards_block: str,
 ) -> str:
-    """형식 유지 + 공식 성취기준 + 수행평가 세부계획 반영 운영계획서를 반환한다."""
+    """업로드 서식 골격 유지 + 공식 성취기준 반영 운영계획서를 반환한다."""
+    if not (document_text or "").strip():
+        raise ValueError(
+            "업로드 서식에서 텍스트를 읽지 못했습니다. "
+            "HWPX로 저장해 다시 업로드해 주세요."
+        )
+
     provider_normalized = provider.strip().lower()
     user_prompt = _build_user_prompt(
         school_level=school_level,
@@ -256,7 +218,7 @@ def _generate_with_openai(model: str, api_key: str, user_prompt: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.25,
+        temperature=0.15,
     )
     content = response.choices[0].message.content
     if not content:
@@ -286,7 +248,7 @@ def _generate_with_anthropic(model: str, api_key: str, user_prompt: str) -> str:
         "messages": [{"role": "user", "content": user_prompt}],
     }
     if not is_claude_5_plus:
-        create_kwargs["temperature"] = 0.25
+        create_kwargs["temperature"] = 0.15
 
     message = client.messages.create(**create_kwargs)
 

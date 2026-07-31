@@ -217,6 +217,14 @@ async def generate(
                 status_code=400,
                 detail="문서에서 텍스트를 추출하지 못했습니다.",
             )
+        if len(document_text.strip()) < 80:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "업로드 서식에서 읽은 내용이 너무 짧아 형식을 파악할 수 없습니다. "
+                    "표·본문이 포함된 HWPX 파일을 업로드해 주세요."
+                ),
+            )
 
         try:
             official_standards_block = build_official_standards_block(

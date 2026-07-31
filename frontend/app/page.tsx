@@ -200,6 +200,11 @@ export default function HomePage() {
               onFileChange={setFile}
               disabled={loading}
             />
+            <p className="-mt-2 text-xs text-slate-500">
+              생성 결과는 업로드한 서식(목차·표 열)을 그대로 채웁니다. 표 구조가
+              중요한 경우 <span className="font-semibold">HWPX</span> 업로드를
+              권장합니다.
+            </p>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
