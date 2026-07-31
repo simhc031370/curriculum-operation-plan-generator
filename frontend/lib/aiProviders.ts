@@ -12,6 +12,13 @@ export const PROVIDER_LABELS: Record<AiProvider, string> = {
   gemini: "Gemini",
 };
 
+/** API 키 발급 페이지 바로가기 */
+export const PROVIDER_API_KEY_URLS: Record<AiProvider, string> = {
+  openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  gemini: "https://aistudio.google.com/apikey",
+};
+
 export const PROVIDER_MODELS: Record<AiProvider, string[]> = {
   openai: [
     "gpt-5.6-sol",

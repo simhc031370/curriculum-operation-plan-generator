@@ -3,6 +3,7 @@
 import {
   AiProvider,
   AiSettings,
+  PROVIDER_API_KEY_URLS,
   PROVIDER_LABELS,
   PROVIDER_MODELS,
 } from "@/lib/aiProviders";
@@ -17,6 +18,7 @@ export default function AiSettingsPanel({
   onChange,
 }: AiSettingsPanelProps) {
   const models = PROVIDER_MODELS[settings.provider];
+  const currentKeyUrl = PROVIDER_API_KEY_URLS[settings.provider];
 
   const handleProviderChange = (provider: AiProvider) => {
     onChange({
@@ -39,6 +41,28 @@ export default function AiSettingsPanel({
         <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
           BYOK
         </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(Object.keys(PROVIDER_API_KEY_URLS) as AiProvider[]).map((key) => (
+          <a
+            key={key}
+            href={PROVIDER_API_KEY_URLS[key]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={[
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+              settings.provider === key
+                ? "border-brand-500 bg-brand-50 text-brand-800"
+                : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:bg-brand-50/60 hover:text-brand-700",
+            ].join(" ")}
+          >
+            {PROVIDER_LABELS[key]} API 키 받기
+            <span aria-hidden className="text-[10px] opacity-70">
+              ↗
+            </span>
+          </a>
+        ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -83,9 +107,19 @@ export default function AiSettingsPanel({
         </div>
 
         <div>
-          <label htmlFor="apiKey" className="field-label">
-            API Key
-          </label>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <label htmlFor="apiKey" className="field-label mb-0">
+              API Key
+            </label>
+            <a
+              href={currentKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-brand-600 hover:text-brand-800 hover:underline"
+            >
+              {PROVIDER_LABELS[settings.provider]} 키 발급 바로가기
+            </a>
+          </div>
           <input
             id="apiKey"
             type="password"
