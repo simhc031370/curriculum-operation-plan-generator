@@ -256,7 +256,8 @@ export default function HomePage() {
                   ))}
                 </select>
                 <p className="mt-1.5 text-xs text-slate-500">
-                  선택한 교육과정의 국가성취기준을 기준으로 작성합니다.
+                  2022/2015 개정 성취기준은 STAS·에듀넷 공식 자료에서 조회하며,
+                  AI가 임의로 생성하지 않습니다.
                 </p>
               </div>
             </div>
@@ -276,8 +277,7 @@ export default function HomePage() {
                 onChange={(e) => setUnitNames(e.target.value)}
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                선택한 교육과정의 국가성취기준을 대단원에 매핑해 구체적으로
-                작성합니다.
+                STAS·에듀넷에서 조회한 공식 성취기준을 대단원에 매핑합니다.
               </p>
             </div>
 

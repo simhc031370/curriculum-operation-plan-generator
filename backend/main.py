@@ -18,6 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ai_generator import generate_operation_plan
+from curriculum_lookup import (
+    CurriculumLookupError,
+    build_official_standards_block,
+)
 from document_parser import extract_text_from_file
 
 app = FastAPI(
@@ -122,6 +126,24 @@ async def generate(
                 detail="문서에서 텍스트를 추출하지 못했습니다.",
             )
 
+        try:
+            official_standards_block = build_official_standards_block(
+                curriculum=curriculum.strip(),
+                school_level=school_level.strip(),
+                grade=grade.strip(),
+                subject=subject.strip(),
+                unit_names=unit_names.strip(),
+            )
+        except CurriculumLookupError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"공식 국가성취기준 조회 실패: {exc} "
+                    "(https://stas.moe.go.kr/cmn/main , "
+                    "https://www.edunet.net/main 기준으로 과목·학년을 확인해 주세요.)"
+                ),
+            ) from exc
+
         markdown = generate_operation_plan(
             provider=provider,
             model=model,
@@ -134,6 +156,7 @@ async def generate(
             unit_names=unit_names.strip(),
             performance_items=performance_items.strip(),
             document_text=document_text,
+            official_standards_block=official_standards_block,
         )
 
         return JSONResponse(
