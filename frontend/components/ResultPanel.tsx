@@ -7,6 +7,7 @@ import {
   buildDownloadBaseName,
   downloadDocx,
   downloadHwpx,
+  downloadHwpxBase64,
   downloadMarkdown,
 } from "@/lib/downloadResult";
 import { sanitizeMarkdown } from "@/lib/sanitizeMarkdown";
@@ -18,6 +19,7 @@ interface ResultPanelProps {
   grade?: string;
   subject?: string;
   templateFidelity?: number | null;
+  hwpxBase64?: string | null;
 }
 
 function LoadingState() {
@@ -46,12 +48,14 @@ export default function ResultPanel({
   grade,
   subject,
   templateFidelity = null,
+  hwpxBase64 = null,
 }: ResultPanelProps) {
   const cleaned = sanitizeMarkdown(markdown);
   const [downloading, setDownloading] = useState(false);
   const baseName = buildDownloadBaseName({ schoolLevel, grade, subject });
-  const fidelityLabel =
-    typeof templateFidelity === "number"
+  const fidelityLabel = hwpxBase64
+    ? "원본 서식 채움"
+    : typeof templateFidelity === "number"
       ? `서식 일치도 ${Math.round(templateFidelity * 100)}%`
       : null;
 
@@ -66,7 +70,11 @@ export default function ResultPanel({
   const handleDownloadHwpx = async () => {
     try {
       setDownloading(true);
-      await downloadHwpx(cleaned, baseName);
+      if (hwpxBase64) {
+        downloadHwpxBase64(hwpxBase64, baseName);
+      } else {
+        await downloadHwpx(cleaned, baseName);
+      }
     } catch (err) {
       alert(
         err instanceof Error
@@ -142,8 +150,9 @@ export default function ResultPanel({
 
       {cleaned && !loading && (
         <p className="mb-3 text-xs text-slate-500">
-          한글 파일(.hwpx)은 한컴오피스 한글에서 바로 열어 편집·저장할 수
-          있습니다.
+          {hwpxBase64
+            ? "한글 파일은 업로드한 서식 원본에 내용을 채워 내려받습니다."
+            : "한글 파일(.hwpx)은 한컴오피스 한글에서 바로 열어 편집·저장할 수 있습니다. HWPX 서식 업로드 시 원본 형식이 유지됩니다."}
         </p>
       )}
 

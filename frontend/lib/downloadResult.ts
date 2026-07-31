@@ -33,7 +33,18 @@ export function downloadMarkdown(markdown: string, baseName: string) {
   triggerDownload(blob, `${baseName}.md`);
 }
 
-/** 백엔드에서 HWPX(한글 문서)를 생성해 다운로드합니다. */
+/** 생성 시 받은 원본채움 HWPX(base64)를 다운로드합니다. */
+export function downloadHwpxBase64(base64: string, baseName: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "application/hwp+zip" });
+  triggerDownload(blob, `${baseName}.hwpx`);
+}
+
+/** 백엔드에서 마크다운→HWPX 변환(원본 채움이 없을 때만 사용). */
 export async function downloadHwpx(markdown: string, baseName: string) {
   const response = await fetch("/api/export/hwpx", {
     method: "POST",

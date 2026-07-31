@@ -36,6 +36,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [markdown, setMarkdown] = useState("");
   const [fidelity, setFidelity] = useState<number | null>(null);
+  const [hwpxBase64, setHwpxBase64] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const grades = useMemo(() => GRADES_BY_LEVEL[schoolLevel], [schoolLevel]);
@@ -136,6 +137,7 @@ export default function HomePage() {
     setLoading(true);
     setMarkdown("");
     setFidelity(null);
+    setHwpxBase64(null);
 
     try {
       const response = await fetch(GENERATE_API, {
@@ -161,6 +163,9 @@ export default function HomePage() {
       setMarkdown(data.markdown);
       if (typeof data.template_fidelity === "number") {
         setFidelity(data.template_fidelity);
+      }
+      if (typeof data.hwpx_base64 === "string" && data.hwpx_base64) {
+        setHwpxBase64(data.hwpx_base64);
       }
     } catch (err) {
       const message =
@@ -470,6 +475,7 @@ export default function HomePage() {
           grade={grade}
           subject={subject}
           templateFidelity={fidelity}
+          hwpxBase64={hwpxBase64}
         />
       </div>
 

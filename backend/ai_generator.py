@@ -258,6 +258,74 @@ def generate_operation_plan(
 generate_lesson_plan = generate_operation_plan
 
 
+def generate_hwpx_fill_plan(
+    provider: str,
+    model: str,
+    api_key: str,
+    school_level: str,
+    grade: str,
+    subject: str,
+    total_hours: int,
+    curriculum: str,
+    unit_names: str,
+    performance_items: str,
+    written_exam_count: int,
+    written_exam_ratio: int,
+    performance_exam_count: int,
+    performance_exam_ratio: int,
+    official_standards_block: str,
+    slots_json: str,
+) -> dict[str, str]:
+    """HWPX 원본 슬롯을 채울 JSON 맵을 생성한다."""
+    from hwpx_inplace import parse_fills_json
+
+    perf_count = _count_items(performance_items)
+    prompt = f"""당신은 한글(HWPX) 서식의 빈칸만 채우는 작성자다.
+아래 JSON 슬롯 목록의 각 id에 넣을 값만 작성하라.
+서식 구조·표·달력(월/주/기간/공휴일)은 절대 바꾸지 마라.
+
+# 입력 조건
+- 학교급: {school_level}
+- 학년: {grade}
+- 과목: {subject}
+- 시수(학기 단위): {total_hours}
+- 교육과정: {curriculum}
+- 대단원명:
+{unit_names}
+- 수행평가 항목 ({perf_count}개):
+{performance_items}
+- 지필평가: {written_exam_count}회 / {written_exam_ratio}%
+- 수행평가: {performance_exam_count}회 / {performance_exam_ratio}%
+
+{official_standards_block}
+
+# 채울 슬롯 (current가 비어 있거나 OO/○ 자리표시)
+{slots_json}
+
+# 작성 규칙
+1. 출력은 JSON 객체 하나만: {{"fills": {{"슬롯id": "채울텍스트", ...}}}}
+2. 모든 fillable 슬롯 id를 포함하라. 해당 없으면 ""
+3. 과목명이 들어가는 OO/O O 자리는 "{subject}"로 바꿔라
+4. 학년/학기/시수/반영비율/대단원/성취기준/수행평가 항목을 표 칸에 맞게 기입
+5. 월·주·기간·공휴일 칸은 슬롯에 있어도 원문 current를 유지하거나 비워두지 말고, 달력 정보는 건드리지 말 것
+6. 성취기준은 공식 목록 코드만 사용
+7. JSON 외 설명 금지
+"""
+    provider_normalized = provider.strip().lower()
+    raw = _call_llm(provider_normalized, model, api_key, prompt)
+    try:
+        return parse_fills_json(raw)
+    except Exception:
+        # 한 번 더 엄격히 재요청
+        repair = (
+            "이전 응답이 유효한 JSON이 아니다. "
+            '반드시 {"fills":{"id":"text"}} 형식의 JSON만 출력하라.\n\n'
+            f"슬롯:\n{slots_json[:20000]}\n\n이전 응답:\n{raw[:4000]}"
+        )
+        raw2 = _call_llm(provider_normalized, model, api_key, repair)
+        return parse_fills_json(raw2)
+
+
 def _call_llm(provider: str, model: str, api_key: str, user_prompt: str) -> str:
     if provider == "openai":
         return _generate_with_openai(model, api_key, user_prompt)

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import tempfile
 import traceback
@@ -19,13 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from ai_generator import generate_operation_plan
+from ai_generator import generate_hwpx_fill_plan, generate_operation_plan
 from curriculum_lookup import (
     CurriculumLookupError,
     build_official_standards_block,
 )
 from document_parser import extract_text_from_file
 from hwpx_exporter import markdown_to_hwpx_bytes
+from hwpx_inplace import apply_fills, extract_slots, slots_for_prompt, slots_summary
 
 app = FastAPI(
     title="교수학습평가 운영계획서 자동 생성 API",
@@ -244,29 +246,74 @@ async def generate(
                 ),
             ) from exc
 
-        markdown = generate_operation_plan(
-            provider=provider,
-            model=model,
-            api_key=api_key.strip(),
-            school_level=school_level.strip(),
-            grade=grade.strip(),
-            subject=subject.strip(),
-            total_hours=total_hours,
-            curriculum=curriculum.strip(),
-            unit_names=unit_names.strip(),
-            performance_items=performance_items.strip(),
-            written_exam_count=written_exam_count,
-            written_exam_ratio=written_exam_ratio,
-            performance_exam_count=performance_exam_count,
-            performance_exam_ratio=performance_exam_ratio,
-            document_text=document_text,
-            official_standards_block=official_standards_block,
-        )
+        hwpx_base64: str | None = None
+        fill_mode = "markdown"
+        slot_stats: dict[str, int] = {}
 
-        from template_skeleton import build_template_skeleton, fidelity_report
+        # HWPX는 원본 서식 파일을 직접 채워 다운로드 가능하게 한다.
+        if suffix == ".hwpx":
+            slots = extract_slots(tmp_path)
+            slot_stats = slots_summary(slots)
+            fills = generate_hwpx_fill_plan(
+                provider=provider,
+                model=model,
+                api_key=api_key.strip(),
+                school_level=school_level.strip(),
+                grade=grade.strip(),
+                subject=subject.strip(),
+                total_hours=total_hours,
+                curriculum=curriculum.strip(),
+                unit_names=unit_names.strip(),
+                performance_items=performance_items.strip(),
+                written_exam_count=written_exam_count,
+                written_exam_ratio=written_exam_ratio,
+                performance_exam_count=performance_exam_count,
+                performance_exam_ratio=performance_exam_ratio,
+                official_standards_block=official_standards_block,
+                slots_json=slots_for_prompt(slots),
+            )
+            # 잠긴 슬롯은 적용하지 않음
+            locked_ids = {s.id for s in slots if s.locked}
+            safe_fills = {k: v for k, v in fills.items() if k not in locked_ids}
+            filled_bytes = apply_fills(tmp_path, safe_fills)
+            hwpx_base64 = base64.b64encode(filled_bytes).decode("ascii")
+            fill_mode = "hwpx_inplace"
 
-        skeleton = build_template_skeleton(document_text)
-        score, _missing = fidelity_report(skeleton, markdown)
+            # 미리보기는 채워진 HWPX에서 추출
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".hwpx") as filled_tmp:
+                filled_tmp.write(filled_bytes)
+                filled_path = filled_tmp.name
+            try:
+                markdown = extract_text_from_file(filled_path)
+            finally:
+                try:
+                    os.remove(filled_path)
+                except OSError:
+                    pass
+            score = 1.0
+        else:
+            markdown = generate_operation_plan(
+                provider=provider,
+                model=model,
+                api_key=api_key.strip(),
+                school_level=school_level.strip(),
+                grade=grade.strip(),
+                subject=subject.strip(),
+                total_hours=total_hours,
+                curriculum=curriculum.strip(),
+                unit_names=unit_names.strip(),
+                performance_items=performance_items.strip(),
+                written_exam_count=written_exam_count,
+                written_exam_ratio=written_exam_ratio,
+                performance_exam_count=performance_exam_count,
+                performance_exam_ratio=performance_exam_ratio,
+                document_text=document_text,
+                official_standards_block=official_standards_block,
+            )
+            from template_skeleton import build_template_skeleton, fidelity_report
+
+            skeleton = build_template_skeleton(document_text)
+            score, _missing = fidelity_report(skeleton, markdown)
 
         return JSONResponse(
             content={
@@ -287,8 +334,9 @@ async def generate(
                 "model": model.strip(),
                 "markdown": markdown,
                 "template_fidelity": round(score, 3),
-                "locked_heading_count": len(skeleton.locked_headings),
-                "locked_table_count": len(skeleton.locked_table_headers),
+                "fill_mode": fill_mode,
+                "hwpx_base64": hwpx_base64,
+                "slot_stats": slot_stats,
             }
         )
     except HTTPException:
