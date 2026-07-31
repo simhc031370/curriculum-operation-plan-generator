@@ -280,36 +280,35 @@ def generate_hwpx_fill_plan(
     from hwpx_inplace import parse_fills_json
 
     perf_count = _count_items(performance_items)
-    prompt = f"""당신은 한글(HWPX) 서식의 빈칸만 채우는 작성자다.
-아래 JSON 슬롯 목록의 각 id에 넣을 값만 작성하라.
-서식 구조·표·달력(월/주/기간/공휴일)은 절대 바꾸지 마라.
+    prompt = f"""당신은 학교 운영계획서 HWPX 서식의 '빈칸 기입' 담당이다.
+서식 구조는 이미 완성되어 있다. 아래 슬롯에만 값을 넣어라.
 
 # 입력 조건
-- 학교급: {school_level}
-- 학년: {grade}
-- 과목: {subject}
-- 시수(학기 단위): {total_hours}
+- 학교급/학년/과목: {school_level} / {grade} / {subject}
+- 시수(학기): {total_hours}
 - 교육과정: {curriculum}
-- 대단원명:
+- 대단원:
 {unit_names}
-- 수행평가 항목 ({perf_count}개):
+- 수행평가 항목({perf_count}개):
 {performance_items}
-- 지필평가: {written_exam_count}회 / {written_exam_ratio}%
-- 수행평가: {performance_exam_count}회 / {performance_exam_ratio}%
+- 지필평가 {written_exam_count}회 {written_exam_ratio}% / 수행평가 {performance_exam_count}회 {performance_exam_ratio}%
 
 {official_standards_block}
 
-# 채울 슬롯 (current가 비어 있거나 OO/○ 자리표시)
+# 슬롯 JSON
 {slots_json}
 
-# 작성 규칙
-1. 출력은 JSON 객체 하나만: {{"fills": {{"슬롯id": "채울텍스트", ...}}}}
-2. 모든 fillable 슬롯 id를 포함하라. 해당 없으면 ""
-3. 과목명이 들어가는 OO/O O 자리는 "{subject}"로 바꿔라
-4. 학년/학기/시수/반영비율/대단원/성취기준/수행평가 항목을 표 칸에 맞게 기입
-5. 월·주·기간·공휴일 칸은 슬롯에 있어도 원문 current를 유지하거나 비워두지 말고, 달력 정보는 건드리지 말 것
-6. 성취기준은 공식 목록 코드만 사용
-7. JSON 외 설명 금지
+# 규칙
+1. 출력은 JSON만: {{"fills":{{"id":"값"}}}}
+2. 값이 없으면 해당 id를 생략 (빈 문자열 넣지 말 것)
+3. OO/O O → "{subject}"
+4. ○% → 숫자% (정기시험/지필={written_exam_ratio}, 수행={performance_exam_ratio}). ○를 과목명으로 바꾸지 말 것
+5. 달력 표: 월/주/기간/공휴일은 변경 금지. 단원명·시수·성취기준·수업방법만 수업 가능 주에 기입
+6. 시험주·휴업주 단원/시수는 비움(생략)
+7. 성취기준은 공식 목록 코드+짧은 사용
+8. 수행평가 영역명 칸에만 수행평가 항목명 기입
+9. 같은 문장을 여러 빈칸에 복붙하지 말 것
+10. JSON 외 텍스트 금지
 """
     provider_normalized = provider.strip().lower()
     raw = _call_llm(provider_normalized, model, api_key, prompt)

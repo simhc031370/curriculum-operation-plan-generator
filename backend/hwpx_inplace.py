@@ -22,8 +22,10 @@ LOCKED_COL_KEYWORDS = (
     "학교 행사",
 )
 
+OO_RE = re.compile(r"O\s*O|OO")
+CIRCLE_RE = re.compile(r"[○◯]")
 PLACEHOLDER_RE = re.compile(
-    r"(OO|O\s*O|○○|◯|○|□|_{2,}|\(\s*\))",
+    r"(OO|O\s*O|○○|◯|○|□|_{2,})",
     re.I,
 )
 
@@ -172,13 +174,13 @@ def _should_fill_cell(text: str, col_header: str, row: int) -> bool:
 
 
 def _should_fill_para(text: str) -> bool:
-    if not text:
+    """레이아웃용 빈 문단은 건드리지 않는다. 가./나. 또는 OO 자리만 채움."""
+    s = (text or "").strip()
+    if re.fullmatch(r"[가-하]\.?", s):
         return True
-    if re.fullmatch(r"[가-하]\.?", text):
+    if s and (OO_RE.search(s) or CIRCLE_RE.search(s)):
         return True
-    if PLACEHOLDER_RE.search(text):
-        return True
-    return len(text) <= 2
+    return False
 
 
 def extract_slots(hwpx_path: str | Path) -> list[HwpxSlot]:
@@ -235,7 +237,7 @@ def extract_slots(hwpx_path: str | Path) -> list[HwpxSlot]:
                 if any(_local(x.tag) == "tbl" for x in elem.iter() if x is not elem):
                     continue
                 text = _para_text(elem)
-                if not _should_fill_para(text) and text:
+                if not _should_fill_para(text):
                     continue
                 slots.append(
                     HwpxSlot(
@@ -270,6 +272,47 @@ def slots_for_prompt(slots: list[HwpxSlot], *, limit: int = 220) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def _replace_markers(
+    text: str,
+    *,
+    subject: str,
+    written_exam_count: int,
+    written_exam_ratio: int,
+    performance_exam_count: int,
+    performance_exam_ratio: int,
+) -> str:
+    """OO → 과목, ○%/○회 → 입력 비율·횟수. 과목명으로 ○를 덮어쓰지 않는다."""
+    t = text
+    t = OO_RE.sub(subject, t)
+
+    # 문맥별 ○% / ○회
+    if "수행" in t:
+        t = re.sub(r"[○◯]\s*%", f"{performance_exam_ratio}%", t)
+        t = re.sub(r"[○◯]\s*회", f"{performance_exam_count}회", t)
+    if "정기" in t or "지필" in t or "1차" in t or "2차" in t:
+        # 1차/2차 분할
+        if "1차" in t and written_exam_count >= 1:
+            share = written_exam_ratio if written_exam_count == 1 else max(
+                written_exam_ratio // 2, 1
+            )
+            t = re.sub(r"[○◯]\s*%", f"{share}%", t)
+        elif "2차" in t:
+            share = 0 if written_exam_count <= 1 else written_exam_ratio - (
+                written_exam_ratio // 2
+            )
+            t = re.sub(r"[○◯]\s*%", f"{share}%", t)
+        else:
+            t = re.sub(r"[○◯]\s*%", f"{written_exam_ratio}%", t)
+        t = re.sub(r"[○◯]\s*회", f"{written_exam_count}회", t)
+
+    # 남은 ○% 는 과목으로 치환하지 말고 비율만 보정
+    t = re.sub(r"[○◯]\s*%", f"{written_exam_ratio}%", t)
+    t = re.sub(r"[○◯]\s*회", f"{performance_exam_count}회", t)
+    # 단독 ○ 잔여만 제거(과목 치환 금지)
+    t = CIRCLE_RE.sub("", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
 def build_baseline_fills(
     slots: list[HwpxSlot],
     *,
@@ -284,76 +327,51 @@ def build_baseline_fills(
     performance_exam_count: int,
     performance_exam_ratio: int,
 ) -> dict[str, str]:
-    """LLM 실패/누락에도 핵심 칸이 비지 않도록 규칙 기반 기본값을 채운다."""
-    units = [ln.strip(" -\t") for ln in unit_names.splitlines() if ln.strip()]
-    if len(units) <= 1 and unit_names.strip():
-        units = [p.strip() for p in re.split(r"[,/|]", unit_names) if p.strip()]
-    perfs = [ln.strip(" -\t") for ln in performance_items.splitlines() if ln.strip()]
-    if len(perfs) <= 1 and performance_items.strip():
-        perfs = [p.strip() for p in re.split(r"[,/|]", performance_items) if p.strip()]
-
+    """안전하게 확정 가능한 칸만 채운다. 달력 본문·레이아웃 빈칸은 건드리지 않는다."""
+    _ = (school_level, total_hours, unit_names, performance_items)  # LLM 상세 채움용
     fills: dict[str, str] = {}
-    unit_i = 0
-    perf_i = 0
-    hours_left = total_hours
+
+    purpose = {
+        "가": f"가. {subject} 교과의 성취기준에 따른 학업성취도를 정확하게 평가한다.",
+        "나": f"나. 학습 과정을 확인하고 피드백하여 학생의 성장을 지원한다.",
+        "다": f"다. 평가 결과를 수업 개선과 개별 맞춤 지도에 활용한다.",
+    }
 
     for s in slots:
         if s.locked:
             continue
         header = s.col_header or ""
-        cur = s.current_text or ""
-        hnorm = _norm(header)
+        cur = (s.current_text or "").strip()
 
-        # OO 자리표시 → 과목
-        if PLACEHOLDER_RE.search(cur):
-            fills[s.id] = PLACEHOLDER_RE.sub(subject, cur)
+        # 1) OO / ○ 자리표시가 있는 칸만 문맥에 맞게 치환
+        if cur and (OO_RE.search(cur) or CIRCLE_RE.search(cur)):
+            fills[s.id] = _replace_markers(
+                cur,
+                subject=subject,
+                written_exam_count=written_exam_count,
+                written_exam_ratio=written_exam_ratio,
+                performance_exam_count=performance_exam_count,
+                performance_exam_ratio=performance_exam_ratio,
+            )
             continue
 
+        # 2) 표지 메타 정보
         if not cur:
-            if "학년" in header and "학기" not in header:
-                fills[s.id] = grade
-            elif "과목" in header:
-                fills[s.id] = subject
-            elif "학교" in header and "행사" not in header:
-                fills[s.id] = ""  # 학교명은 원본 유지(금당중 등) — 빈 칸만
-            elif "단원" in header:
-                if unit_i < len(units):
-                    fills[s.id] = units[unit_i]
-                    unit_i += 1
-            elif "성취기준" in header:
-                fills[s.id] = "(공식 성취기준 반영)"
-            elif "시수" in header or "누계" in header:
-                if hours_left > 0:
-                    chunk = 1 if hours_left >= 1 else hours_left
-                    fills[s.id] = str(chunk)
-                    hours_left -= chunk
-            elif "수업" in header and "방법" in header:
-                fills[s.id] = "강의·실습"
-            elif "주안점" in header or "연계" in header:
-                fills[s.id] = "수업-평가 연계"
-            elif "영역명" in header or (s.kind == "cell" and "수행" in header):
-                if perf_i < len(perfs):
-                    fills[s.id] = perfs[perf_i]
-                    perf_i += 1
-            elif "반영비율" in hnorm or "반영" in header:
-                # 평가비율 표의 빈 칸 — 문맥에 따라
-                if "정기" in header or "지필" in header:
-                    fills[s.id] = f"{written_exam_ratio}%"
-                elif "수행" in header:
-                    fills[s.id] = f"{performance_exam_ratio}%"
-            elif s.kind == "para" and re.fullmatch(r"[가-하]\.?", cur or "") or (
-                s.kind == "para" and not cur
+            if header.strip() == "학년" or (
+                "학년" in header and "학기" not in header and len(header) <= 6
             ):
-                # 빈 목적/개요 문단
-                if not cur or re.fullmatch(r"[가-하]\.?", cur):
-                    prefix = f"{cur} " if cur else ""
-                    fills[s.id] = (
-                        f"{prefix}{school_level} {grade} {subject} 교과의 "
-                        f"교수·학습·평가를 체계적으로 운영한다."
-                    )
+                fills[s.id] = grade
+            elif header.strip() == "과목" or header.strip() == "교과":
+                fills[s.id] = subject
+            continue
 
-    # 제목/헤더성 OO 치환은 위에서 처리됨
-    return {k: v for k, v in fills.items() if v is not None and str(v).strip() != ""}
+        # 3) 평가 목적 가/나/다
+        if s.kind == "para":
+            m = re.fullmatch(r"([가-하])\.?", cur)
+            if m and m.group(1) in purpose:
+                fills[s.id] = purpose[m.group(1)]
+
+    return {k: v for k, v in fills.items() if v and str(v).strip()}
 
 
 def apply_fills(hwpx_path: str | Path, fills: dict[str, str]) -> tuple[bytes, int]:
@@ -426,7 +444,7 @@ def _apply_section_fills(
         if any(_local(x.tag) == "tbl" for x in elem.iter() if x is not elem):
             continue
         text = _para_text(elem)
-        if not _should_fill_para(text) and text:
+        if not _should_fill_para(text):
             continue
         slot_id = f"{section_name}|p{para_i}"
         if slot_id in fills:
