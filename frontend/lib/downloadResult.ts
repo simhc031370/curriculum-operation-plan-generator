@@ -1,6 +1,5 @@
 /**
- * 생성 결과 다운로드 유틸 (Markdown / Word DOCX)
- * DOCX는 한글(한컴오피스)에서도 바로 열 수 있습니다.
+ * 생성 결과 다운로드 유틸 (한글 HWPX / Markdown / Word DOCX)
  */
 
 import {
@@ -32,6 +31,29 @@ export function downloadMarkdown(markdown: string, baseName: string) {
     type: "text/markdown;charset=utf-8",
   });
   triggerDownload(blob, `${baseName}.md`);
+}
+
+/** 백엔드에서 HWPX(한글 문서)를 생성해 다운로드합니다. */
+export async function downloadHwpx(markdown: string, baseName: string) {
+  const response = await fetch("/api/export/hwpx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ markdown, filename: baseName }),
+  });
+
+  if (!response.ok) {
+    let detail = "한글 파일 생성에 실패했습니다.";
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) detail = payload.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await response.blob();
+  triggerDownload(blob, `${baseName}.hwpx`);
 }
 
 type Block =

@@ -73,6 +73,10 @@ def _build_user_prompt(
     curriculum: str,
     unit_names: str,
     performance_items: str,
+    written_exam_count: int,
+    written_exam_ratio: int,
+    performance_exam_count: int,
+    performance_exam_ratio: int,
     document_text: str,
     official_standards_block: str,
 ) -> str:
@@ -102,17 +106,20 @@ def _build_user_prompt(
    - 배점 및 반영 비율
    - 평가 시기
    - 유의사항·피드백 계획
-4. 반영 비율 합계가 문서 형식과 맞게 맞을 것
-5. '작성 예정', '예시', 빈 칸을 남기지 말 것
+4. 수행평가 전체 반영 비율은 {performance_exam_ratio}%이며,
+   실시 횟수는 {performance_exam_count}회에 맞게 시기·배점을 구성할 것
+5. 항목별 반영 비율 합이 {performance_exam_ratio}%가 되도록 나눌 것
+6. '작성 예정', '예시', 빈 칸을 남기지 말 것
 """
         if perf_count >= 2
         else f"""
 ## 수행평가 작성 규칙 (항목 {perf_count}개)
 1. 입력된 수행평가 항목에 맞춰 세부 평가 계획을 원본 한글 서식에 맞게 완벽하게 작성할 것
-2. 세부 계획에 빈칸 없이 포함할 내용:
+2. 수행평가 실시 횟수 {performance_exam_count}회, 반영 비율 {performance_exam_ratio}%를 그대로 반영할 것
+3. 세부 계획에 빈칸 없이 포함할 내용:
    - 평가 목표, 관련 국가성취기준(아래 공식 목록의 코드+진술 그대로), 평가 과제/활동,
      평가 방법·도구, 채점 기준(표), 배점·반영 비율, 평가 시기, 유의사항
-3. 추상적 한 줄 설명으로 끝내지 말고 수업에서 바로 쓸 수 있게 구체적으로 채울 것
+4. 추상적 한 줄 설명으로 끝내지 말고 수업에서 바로 쓸 수 있게 구체적으로 채울 것
 """
     )
 
@@ -128,6 +135,10 @@ def _build_user_prompt(
 {unit_names}
 - 수행평가 항목:
 {performance_items}
+- 지필평가 횟수: {written_exam_count}회
+- 지필평가 반영 비율: {written_exam_ratio}%
+- 수행평가 실시 횟수: {performance_exam_count}회
+- 수행평가 반영 비율: {performance_exam_ratio}%
 
 {official_standards_block}
 
@@ -158,11 +169,14 @@ def _build_user_prompt(
 2. 표는 GitHub Flavored Markdown 표(| --- |)만 사용할 것
 3. 모든 칸·모든 항목을 실제 내용으로 채울 것. 빈칸/미정/추후작성/예시 금지
 4. 시수 합계가 {total_hours}와 일치하는지 문서에 명시할 것
-5. 각 대단원마다 학습 내용, 공식 성취기준, 시수, 평가 연계가 빠지지 않게 작성할 것
-6. 불필요한 서론·반복 설명·과도한 확장 없이 운영계획서 본문만 간결하게 출력할 것
-7. 표 칸은 핵심만 쓰고 장문 나열을 피할 것. 같은 내용을 여러 섹션에 복붙하지 말 것
-8. 출력 전에 스스로 검수: 누락 항목, HTML 잔여, 표 깨짐, 시수 불일치,
-   공식 목록에 없는 성취기준 코드 사용 여부가 있으면 수정 후 제출
+5. 지필평가 {written_exam_count}회·반영 비율 {written_exam_ratio}%,
+   수행평가 {performance_exam_count}회·반영 비율 {performance_exam_ratio}%를
+   평가계획·성적 반영 비율 표에 그대로 반영할 것 (합계 100%)
+6. 각 대단원마다 학습 내용, 공식 성취기준, 시수, 평가 연계가 빠지지 않게 작성할 것
+7. 불필요한 서론·반복 설명·과도한 확장 없이 운영계획서 본문만 간결하게 출력할 것
+8. 표 칸은 핵심만 쓰고 장문 나열을 피할 것. 같은 내용을 여러 섹션에 복붙하지 말 것
+9. 출력 전에 스스로 검수: 누락 항목, HTML 잔여, 표 깨짐, 시수 불일치,
+   반영 비율 합계(100%), 공식 목록에 없는 성취기준 코드 사용 여부가 있으면 수정 후 제출
 """
 
 
@@ -177,6 +191,10 @@ def generate_operation_plan(
     curriculum: str,
     unit_names: str,
     performance_items: str,
+    written_exam_count: int,
+    written_exam_ratio: int,
+    performance_exam_count: int,
+    performance_exam_ratio: int,
     document_text: str,
     official_standards_block: str,
 ) -> str:
@@ -190,6 +208,10 @@ def generate_operation_plan(
         curriculum=curriculum,
         unit_names=unit_names,
         performance_items=performance_items,
+        written_exam_count=written_exam_count,
+        written_exam_ratio=written_exam_ratio,
+        performance_exam_count=performance_exam_count,
+        performance_exam_ratio=performance_exam_ratio,
         document_text=document_text,
         official_standards_block=official_standards_block,
     )

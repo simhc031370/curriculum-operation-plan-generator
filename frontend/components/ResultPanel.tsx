@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import {
   buildDownloadBaseName,
   downloadDocx,
+  downloadHwpx,
   downloadMarkdown,
 } from "@/lib/downloadResult";
 import { sanitizeMarkdown } from "@/lib/sanitizeMarkdown";
@@ -56,6 +57,21 @@ export default function ResultPanel({
     downloadMarkdown(cleaned, baseName);
   };
 
+  const handleDownloadHwpx = async () => {
+    try {
+      setDownloading(true);
+      await downloadHwpx(cleaned, baseName);
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? `한글 파일 생성 실패: ${err.message}`
+          : "한글 파일 생성에 실패했습니다."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleDownloadDocx = async () => {
     try {
       setDownloading(true);
@@ -89,15 +105,23 @@ export default function ResultPanel({
               onClick={handleDownloadMd}
               className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
             >
-              Markdown 다운로드
+              Markdown
             </button>
             <button
               type="button"
               onClick={handleDownloadDocx}
               disabled={downloading}
+              className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Word(.docx)
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadHwpx}
+              disabled={downloading}
               className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-brand-300"
             >
-              {downloading ? "파일 생성 중…" : "한글용 Word(.docx) 다운로드"}
+              {downloading ? "파일 생성 중…" : "한글 파일(.hwpx) 다운로드"}
             </button>
           </div>
         )}
@@ -105,7 +129,7 @@ export default function ResultPanel({
 
       {cleaned && !loading && (
         <p className="mb-3 text-xs text-slate-500">
-          Word(.docx) 파일은 한글(한컴오피스)에서 바로 열어 편집·저장할 수
+          한글 파일(.hwpx)은 한컴오피스 한글에서 바로 열어 편집·저장할 수
           있습니다.
         </p>
       )}

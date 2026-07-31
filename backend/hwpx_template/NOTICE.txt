@@ -1,0 +1,2 @@
+HWPX packaging template adapted from jkf87/hwpx-skill (templates/base).
+Used only as an empty OWPML skeleton for generating .hwpx downloads.

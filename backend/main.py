@@ -12,10 +12,12 @@ import os
 import tempfile
 import traceback
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 
 from ai_generator import generate_operation_plan
 from curriculum_lookup import (
@@ -23,6 +25,7 @@ from curriculum_lookup import (
     build_official_standards_block,
 )
 from document_parser import extract_text_from_file
+from hwpx_exporter import markdown_to_hwpx_bytes
 
 app = FastAPI(
     title="교수학습평가 운영계획서 자동 생성 API",
@@ -52,6 +55,63 @@ def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
+class HwpxExportRequest(BaseModel):
+    markdown: str = Field(..., min_length=1, description="다운로드할 결과 Markdown")
+    filename: str = Field(
+        default="교수학습평가운영계획서",
+        description="확장자 없는 파일명",
+    )
+
+
+@app.post("/api/export/hwpx")
+def export_hwpx(body: HwpxExportRequest) -> Response:
+    """생성 결과를 한글에서 바로 여는 HWPX 파일로 내보냅니다."""
+    markdown = body.markdown.strip()
+    if not markdown:
+        raise HTTPException(status_code=400, detail="내보낼 내용이 비어 있습니다.")
+
+    safe_name = (
+        body.filename.strip()
+        .replace("\\", "")
+        .replace("/", "")
+        .replace(":", "")
+        .replace("*", "")
+        .replace("?", "")
+        .replace('"', "")
+        .replace("<", "")
+        .replace(">", "")
+        .replace("|", "")
+        .replace("\n", "")
+        .replace("\r", "")
+    )
+    if not safe_name:
+        safe_name = "교수학습평가운영계획서"
+    if not safe_name.lower().endswith(".hwpx"):
+        safe_name = f"{safe_name}.hwpx"
+
+    try:
+        data = markdown_to_hwpx_bytes(markdown)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"한글 파일 생성 중 오류가 발생했습니다: {exc}",
+        ) from exc
+
+    encoded = quote(safe_name)
+    return Response(
+        content=data,
+        media_type="application/hwp+zip",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"plan.hwpx\"; filename*=UTF-8''{encoded}"
+            ),
+        },
+    )
+
+
 @app.post("/api/generate")
 async def generate(
     file: UploadFile = File(..., description="참고용 운영계획서 (PDF/HWP/HWPX)"),
@@ -62,6 +122,10 @@ async def generate(
     curriculum: str = Form(..., description="국가성취기준 교육과정"),
     unit_names: str = Form(..., description="해당 학기 수업 대단원명"),
     performance_items: str = Form(..., description="수행평가 항목"),
+    written_exam_count: int = Form(..., description="지필평가 횟수"),
+    written_exam_ratio: int = Form(..., description="지필평가 반영 비율(%)"),
+    performance_exam_count: int = Form(..., description="수행평가 실시 횟수"),
+    performance_exam_ratio: int = Form(..., description="수행평가 반영 비율(%)"),
     provider: str = Form(..., description="AI 공급사"),
     model: str = Form(..., description="모델명"),
     api_key: str = Form(..., description="사용자 API 키"),
@@ -92,6 +156,34 @@ async def generate(
         raise HTTPException(
             status_code=400,
             detail="수행평가 항목을 입력해 주세요.",
+        )
+    if written_exam_count < 0 or written_exam_count > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="지필평가 횟수는 0~10 사이여야 합니다.",
+        )
+    if performance_exam_count < 1 or performance_exam_count > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="수행평가 실시 횟수는 1~20 사이여야 합니다.",
+        )
+    if written_exam_ratio < 0 or written_exam_ratio > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="지필평가 반영 비율은 0~100 사이여야 합니다.",
+        )
+    if performance_exam_ratio < 0 or performance_exam_ratio > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="수행평가 반영 비율은 0~100 사이여야 합니다.",
+        )
+    if written_exam_ratio + performance_exam_ratio != 100:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "지필평가·수행평가 반영 비율 합계는 100%여야 합니다. "
+                f"(현재 {written_exam_ratio + performance_exam_ratio}%)"
+            ),
         )
     if not provider.strip():
         raise HTTPException(status_code=400, detail="AI 공급사를 선택해 주세요.")
@@ -155,6 +247,10 @@ async def generate(
             curriculum=curriculum.strip(),
             unit_names=unit_names.strip(),
             performance_items=performance_items.strip(),
+            written_exam_count=written_exam_count,
+            written_exam_ratio=written_exam_ratio,
+            performance_exam_count=performance_exam_count,
+            performance_exam_ratio=performance_exam_ratio,
             document_text=document_text,
             official_standards_block=official_standards_block,
         )
@@ -170,6 +266,10 @@ async def generate(
                 "curriculum": curriculum.strip(),
                 "unit_names": unit_names.strip(),
                 "performance_items": performance_items.strip(),
+                "written_exam_count": written_exam_count,
+                "written_exam_ratio": written_exam_ratio,
+                "performance_exam_count": performance_exam_count,
+                "performance_exam_ratio": performance_exam_ratio,
                 "provider": provider.strip().lower(),
                 "model": model.strip(),
                 "markdown": markdown,

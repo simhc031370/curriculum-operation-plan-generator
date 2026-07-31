@@ -29,6 +29,10 @@ export default function HomePage() {
   const [curriculum, setCurriculum] = useState<Curriculum>(DEFAULT_CURRICULUM);
   const [unitNames, setUnitNames] = useState("");
   const [performanceItems, setPerformanceItems] = useState("");
+  const [writtenExamCount, setWrittenExamCount] = useState(1);
+  const [writtenExamRatio, setWrittenExamRatio] = useState(40);
+  const [performanceExamCount, setPerformanceExamCount] = useState(2);
+  const [performanceExamRatio, setPerformanceExamRatio] = useState(60);
   const [loading, setLoading] = useState(false);
   const [markdown, setMarkdown] = useState("");
   const [error, setError] = useState("");
@@ -80,6 +84,36 @@ export default function HomePage() {
       setError("수행평가 항목을 입력해 주세요.");
       return;
     }
+    if (!Number.isFinite(writtenExamCount) || writtenExamCount < 0) {
+      setError("지필평가 횟수는 0 이상의 숫자로 입력해 주세요.");
+      return;
+    }
+    if (!Number.isFinite(performanceExamCount) || performanceExamCount < 1) {
+      setError("수행평가 실시 횟수는 1 이상의 숫자로 입력해 주세요.");
+      return;
+    }
+    if (
+      !Number.isFinite(writtenExamRatio) ||
+      writtenExamRatio < 0 ||
+      writtenExamRatio > 100
+    ) {
+      setError("지필평가 반영 비율은 0~100 사이 숫자로 입력해 주세요.");
+      return;
+    }
+    if (
+      !Number.isFinite(performanceExamRatio) ||
+      performanceExamRatio < 0 ||
+      performanceExamRatio > 100
+    ) {
+      setError("수행평가 반영 비율은 0~100 사이 숫자로 입력해 주세요.");
+      return;
+    }
+    if (writtenExamRatio + performanceExamRatio !== 100) {
+      setError(
+        `지필평가·수행평가 반영 비율 합계가 100%가 되어야 합니다. (현재 ${writtenExamRatio + performanceExamRatio}%)`
+      );
+      return;
+    }
 
     const formData = new FormData();
     formData.append("file", file);
@@ -90,6 +124,10 @@ export default function HomePage() {
     formData.append("curriculum", curriculum);
     formData.append("unit_names", unitNames.trim());
     formData.append("performance_items", performanceItems.trim());
+    formData.append("written_exam_count", String(writtenExamCount));
+    formData.append("written_exam_ratio", String(writtenExamRatio));
+    formData.append("performance_exam_count", String(performanceExamCount));
+    formData.append("performance_exam_ratio", String(performanceExamRatio));
     formData.append("provider", settings.provider);
     formData.append("model", settings.model);
     formData.append("api_key", settings.apiKey.trim());
@@ -144,9 +182,9 @@ export default function HomePage() {
           교수학습평가 운영계획서 자동 생성
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 md:text-base">
-          기존 운영계획서를 업로드하고 학교급·학년·과목·시수(학기 단위)·대단원·수행평가
-          항목을 입력하면, AI가 문서를 분석하고 국가성취기준과 수행평가 세부계획을
-          반영하여 업로드 파일과 동일한 형식으로 작성합니다.
+          기존 운영계획서를 업로드하고 학교급·학년·과목·시수·대단원·수행평가 항목·
+          지필/수행평가 횟수와 반영 비율을 입력하면, AI가 문서를 분석하고 국가성취기준과
+          평가계획을 반영하여 업로드 파일과 동일한 형식으로 작성합니다.
         </p>
       </header>
 
@@ -298,6 +336,94 @@ export default function HomePage() {
               <p className="mt-1.5 text-xs text-slate-500">
                 항목별 세부 평가계획을 작성하며, 2개 이상이면 총괄표와 항목별
                 세부표를 함께 생성합니다.
+              </p>
+            </div>
+
+            <div>
+              <p className="field-label mb-2">평가 횟수 및 반영 비율</p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="writtenExamCount" className="field-label">
+                    지필평가 횟수
+                  </label>
+                  <input
+                    id="writtenExamCount"
+                    type="number"
+                    min={0}
+                    max={10}
+                    className="field-input"
+                    placeholder="예: 1"
+                    value={writtenExamCount}
+                    disabled={loading}
+                    onChange={(e) =>
+                      setWrittenExamCount(Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <label htmlFor="writtenExamRatio" className="field-label">
+                    지필평가 반영 비율 (%)
+                  </label>
+                  <input
+                    id="writtenExamRatio"
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="field-input"
+                    placeholder="예: 40"
+                    value={writtenExamRatio}
+                    disabled={loading}
+                    onChange={(e) =>
+                      setWrittenExamRatio(Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="performanceExamCount"
+                    className="field-label"
+                  >
+                    수행평가 실시 횟수
+                  </label>
+                  <input
+                    id="performanceExamCount"
+                    type="number"
+                    min={1}
+                    max={20}
+                    className="field-input"
+                    placeholder="예: 2"
+                    value={performanceExamCount}
+                    disabled={loading}
+                    onChange={(e) =>
+                      setPerformanceExamCount(Number(e.target.value))
+                    }
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="performanceExamRatio"
+                    className="field-label"
+                  >
+                    수행평가 반영 비율 (%)
+                  </label>
+                  <input
+                    id="performanceExamRatio"
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="field-input"
+                    placeholder="예: 60"
+                    value={performanceExamRatio}
+                    disabled={loading}
+                    onChange={(e) =>
+                      setPerformanceExamRatio(Number(e.target.value))
+                    }
+                  />
+                </div>
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                지필·수행 반영 비율 합계는 100%여야 합니다. (현재{" "}
+                {writtenExamRatio + performanceExamRatio}%)
               </p>
             </div>
 
