@@ -327,7 +327,13 @@ export default function HomePage() {
           </div>
         </form>
 
-        <ResultPanel markdown={markdown} loading={loading} />
+        <ResultPanel
+          markdown={markdown}
+          loading={loading}
+          schoolLevel={schoolLevel}
+          grade={grade}
+          subject={subject}
+        />
       </div>
 
       <footer className="mt-10 text-center text-xs text-slate-400">

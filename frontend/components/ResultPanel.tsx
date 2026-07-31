@@ -1,12 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  buildDownloadBaseName,
+  downloadDocx,
+  downloadMarkdown,
+} from "@/lib/downloadResult";
 import { sanitizeMarkdown } from "@/lib/sanitizeMarkdown";
 
 interface ResultPanelProps {
   markdown: string;
   loading: boolean;
+  schoolLevel?: string;
+  grade?: string;
+  subject?: string;
 }
 
 function LoadingState() {
@@ -21,30 +30,85 @@ function LoadingState() {
           업로드 문서를 분석하고 운영계획서를 작성 중입니다
         </p>
         <p className="mt-1 text-sm text-slate-500">
-          성취기준·단원 시수·수행평가 세부계획을 구성하는 중입니다…
+          모든 항목·수행평가 세부계획을 서식에 맞게 구성하는 중입니다…
         </p>
       </div>
     </div>
   );
 }
 
-export default function ResultPanel({ markdown, loading }: ResultPanelProps) {
+export default function ResultPanel({
+  markdown,
+  loading,
+  schoolLevel,
+  grade,
+  subject,
+}: ResultPanelProps) {
   const cleaned = sanitizeMarkdown(markdown);
+  const [downloading, setDownloading] = useState(false);
+  const baseName = buildDownloadBaseName({ schoolLevel, grade, subject });
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(cleaned);
+  };
+
+  const handleDownloadMd = () => {
+    downloadMarkdown(cleaned, baseName);
+  };
+
+  const handleDownloadDocx = async () => {
+    try {
+      setDownloading(true);
+      await downloadDocx(cleaned, baseName);
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? `Word 파일 생성 실패: ${err.message}`
+          : "Word 파일 생성에 실패했습니다."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <section className="section-panel overflow-hidden p-5 md:p-6">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-brand-900">생성 결과</h2>
         {cleaned && !loading && (
-          <button
-            type="button"
-            onClick={() => navigator.clipboard.writeText(cleaned)}
-            className="shrink-0 rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
-          >
-            마크다운 복사
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
+            >
+              복사
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadMd}
+              className="rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
+            >
+              Markdown 다운로드
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadDocx}
+              disabled={downloading}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-brand-300"
+            >
+              {downloading ? "파일 생성 중…" : "한글용 Word(.docx) 다운로드"}
+            </button>
+          </div>
         )}
       </div>
+
+      {cleaned && !loading && (
+        <p className="mb-3 text-xs text-slate-500">
+          Word(.docx) 파일은 한글(한컴오피스)에서 바로 열어 편집·저장할 수
+          있습니다.
+        </p>
+      )}
 
       {loading ? (
         <LoadingState />
